@@ -40,22 +40,23 @@ The system ensures:
 
 
 project-root/
-│
-├── core/                  # Scheduling logic
-│   ├── scheduler.py
-│   ├── timeslot_generator.py
-│   └── lesson_block_generator.py
-│
-├── models/                # Data models
-│   ├── subject.py
-│   ├── class_model.py
-│   └── timeslot.py
-│
-├── data/                  # Sample & initialization data
-│   └── sample_data.py
-│
-├── main.py                # Entry point
-└── README.md
+
+  core/                  # Scheduling logic
+    scheduler.py
+    timeslot_generator.py
+    lesson_block_generator.py
+
+  models/                # Data models
+    subject.py
+    class_model.py
+    timeslot.py
+  
+  data/                  # Sample & initialization data
+    sample_data.py
+  
+  main.py                # Entry point
+  
+  README.md
 
 
 
