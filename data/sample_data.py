@@ -1,5 +1,11 @@
+# =========================================================
+# IMPORTS
+# =========================================================
+
 from models.subject import Subject
 from models.class_model import ClassModel
+from models.teacher import Teacher  # 🔥 NEW
+
 from core.timeslot_generator import generate_timeslots, get_lesson_slots
 from core.lesson_block_generator import generate_lesson_blocks
 
@@ -16,9 +22,20 @@ STRICT_MODE = True   # True → stop execution, False → allow but warn
 # SUBJECT DEFINITIONS
 # =========================================================
 
+# Subject(id, name, lessons_per_week, difficulty_score, double_lessons, requires_lab)
+
 math = Subject(1, "Math", 6, 9, 1)
+
 english = Subject(2, "English", 5, 7, 0)
-science = Subject(3, "Science", 4, 8, 1, requires_lab=True)
+
+science = Subject(
+    3,
+    "Science",
+    4,
+    8,
+    1,
+    requires_lab=True  # 🔥 Subject-level lab capability
+)
 
 
 # =========================================================
@@ -34,6 +51,43 @@ class_7A = ClassModel(
 
 
 # =========================================================
+# TEACHER DEFINITIONS (🔥 NEW SECTION)
+# =========================================================
+
+# Teacher(id, name, subjects, classes, max_lessons, absolute_max)
+
+math_teacher = Teacher(
+    id=1,
+    name="Mr. John",
+    subjects=["Math"],
+    classes=["7A"],
+    max_lessons_per_week=10,           # Preferred load
+    absolute_max_lessons_per_week=15   # 🔥 Hard cap
+)
+
+english_teacher = Teacher(
+    id=2,
+    name="Ms. Mary",
+    subjects=["English"],
+    classes=["7A"],
+    max_lessons_per_week=10,
+    absolute_max_lessons_per_week=15
+)
+
+science_teacher = Teacher(
+    id=3,
+    name="Mr. Peter",
+    subjects=["Science"],
+    classes=["7A"],
+    max_lessons_per_week=10,
+    absolute_max_lessons_per_week=15
+)
+
+# Master teacher list
+teachers = [math_teacher, english_teacher, science_teacher]
+
+
+# =========================================================
 # WEEK STRUCTURE
 # =========================================================
 
@@ -43,13 +97,15 @@ week_structure = {
     "Wednesday": 8,
     "Thursday": 8,
     "Friday": 8,
-    "Saturday": 4
+    "Saturday": 4   # 🔥 Short day support
 }
 
 
 # =========================================================
 # DAILY TEMPLATES
 # =========================================================
+
+# Each entry represents a period slot with its type and duration
 
 daily_template = [
     {"type": "Lesson", "duration": 40},
@@ -86,29 +142,36 @@ templates = {
 
 def validate_templates(week_structure, templates):
     """
-    Ensures that each day's template matches the number of periods defined.
-    Prevents index errors during timeslot generation.
+    Ensures each day's template matches defined number of periods.
+    Prevents structural mismatch errors.
     """
     for day, periods in week_structure.items():
+
         if day not in templates:
             raise ValueError(f"Missing template for {day}")
 
         if len(templates[day]) != periods:
             raise ValueError(
                 f"Template mismatch for {day}: "
-                f"expected {periods} slots, got {len(templates[day])}"
+                f"expected {periods}, got {len(templates[day])}"
             )
 
 
 def check_capacity(lesson_blocks, lesson_slots, class_name):
     """
-    Compares required lesson periods vs available lesson slots.
-    Returns deficit if any.
+    Checks:
+    Required lesson periods vs Available lesson slots
+
+    Handles:
+    - Strict mode (stop execution)
+    - Flexible mode (warn only)
     """
+
     total_required = sum(block.block_size for block in lesson_blocks)
     total_available = len(lesson_slots)
 
     if total_required > total_available:
+
         deficit = total_required - total_available
 
         message = (
@@ -129,20 +192,21 @@ def check_capacity(lesson_blocks, lesson_slots, class_name):
 
 
 # =========================================================
-# INITIALIZATION PIPELINE (SAFE SETUP)
+# INITIALIZATION PIPELINE
 # =========================================================
 
 def initialize_data():
     """
-    Runs all setup steps:
-    1. Validate templates
+    Full system setup pipeline:
+
+    1. Validate structure
     2. Generate timeslots
     3. Extract lesson slots
     4. Generate lesson blocks
     5. Check capacity
     """
 
-    # Step 1: Validate structure
+    # Step 1: Validate templates
     validate_templates(week_structure, templates)
 
     # Step 2: Generate full timetable grid
@@ -151,19 +215,22 @@ def initialize_data():
     # Step 3: Extract usable lesson slots
     lesson_slots = get_lesson_slots(timeslots)
 
-    # Step 4: Generate lesson blocks for class
+    # Step 4: Generate lesson blocks
     lesson_blocks = generate_lesson_blocks(class_7A)
 
-    # Step 5: Check capacity constraints
+    # Step 5: Capacity validation
     is_valid, deficit = check_capacity(
         lesson_blocks,
         lesson_slots,
         class_7A.name
     )
 
+    # 🔥 RETURN EVERYTHING NEEDED BY SYSTEM
     return {
         "timeslots": timeslots,
         "lesson_slots": lesson_slots,
         "lesson_blocks": lesson_blocks,
-        "capacity_ok": is_valid
+        "teachers": teachers,      # 🔥 NEW
+        "capacity_ok": is_valid,
+        "deficit": deficit         # 🔥 useful for analytics
     }
