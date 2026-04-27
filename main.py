@@ -5,9 +5,10 @@
 #
 # 1. Initialize system data (subjects, classes, teachers, slots)
 # 2. Validate constraints + generate lesson blocks
-# 3. Run scheduling engine (core AI logic)
-# 4. Display final timetable
-# 5. Debug + validation checks
+# 3. Apply SMART ORDERING (prevents clustering)
+# 4. Run scheduling engine (core AI logic)
+# 5. Display final timetable
+# 6. Debug + validation checks
 # =========================================================
 
 
@@ -17,6 +18,7 @@
 
 from data.sample_data import initialize_data
 from core.scheduler import schedule_lessons
+from core.smart_block_ordering import smart_order_blocks # anti-clustering
 
 
 # =========================================================
@@ -58,7 +60,24 @@ if not capacity_ok:
 
 
 # =========================================================
-# STEP 3: RUN SCHEDULING ENGINE (CORE LOGIC)
+# STEP 3: SMART BLOCK ORDERING 
+# =========================================================
+# This is the KEY improvement that prevents clustering
+#
+# Instead of:
+#   Math, Math, Math, Math...
+#
+# We transform to:
+#   Math, English, Science, Math, English...
+#
+# This greatly improves distribution across the week
+# =========================================================
+
+ordered_blocks = smart_order_blocks(lesson_blocks)
+
+
+# =========================================================
+# STEP 4: RUN SCHEDULING ENGINE (CORE LOGIC)
 # =========================================================
 # This is the AI-like decision system that:
 #
@@ -66,17 +85,18 @@ if not capacity_ok:
 # ✔ Matches teachers to lessons
 # ✔ Prevents conflicts (time + teacher + class)
 # ✔ Respects workload constraints
+# ✔ Applies distribution rules (no clustering)
 # =========================================================
 
 timetable = schedule_lessons(
-    lesson_blocks,
+    ordered_blocks,   # 🔥 IMPORTANT: use ordered blocks (NOT original list)
     lesson_slots,
     teachers
 )
 
 
 # =========================================================
-# STEP 4: SYSTEM SUMMARY (DIAGNOSTICS)
+# STEP 5: SYSTEM SUMMARY (DIAGNOSTICS)
 # =========================================================
 # Helps verify system correctness before reviewing output
 # =========================================================
@@ -95,15 +115,14 @@ print(f"Scheduled Periods: {len(timetable)}")
 
 
 # =========================================================
-# STEP 5: DISPLAY FINAL TIMETABLE
+# STEP 6: DISPLAY FINAL TIMETABLE
 # =========================================================
 # Iterates through all lesson slots in order
 #
 # Shows:
 # ✔ Subject assigned
+# ✔ Teacher assigned
 # ✔ OR FREE slot
-#
-# (Future upgrade: show teacher name here)
 # =========================================================
 
 print("\n====================================")
@@ -117,7 +136,7 @@ for slot in lesson_slots:
     if block:
         subject = block.subject
 
-        # OPTIONAL: include teacher name if assigned
+        # Display assigned teacher
         teacher_name = block.teacher.name if block.teacher else "No Teacher"
 
         print(
@@ -133,7 +152,7 @@ for slot in lesson_slots:
 
 
 # =========================================================
-# STEP 6: UNSCHEDULED LESSON DETECTION
+# STEP 7: UNSCHEDULED LESSON DETECTION
 # =========================================================
 # Identifies:
 # ✔ Missing assignments
@@ -165,7 +184,7 @@ else:
 
 
 # =========================================================
-# STEP 7: DEBUGGING SECTION (DEVELOPER INSIGHTS)
+# STEP 8: DEBUGGING SECTION (DEVELOPER INSIGHTS)
 # =========================================================
 # Helps verify internal system correctness
 # Remove in production later if needed
@@ -182,7 +201,7 @@ for block in lesson_blocks:
 
 
 # =========================================================
-# STEP 8: VALIDATION CHECKS
+# STEP 9: VALIDATION CHECKS
 # =========================================================
 
 total_required = sum(block.block_size for block in lesson_blocks)
