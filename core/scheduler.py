@@ -63,9 +63,25 @@ def schedule_lessons(lesson_blocks, lesson_slots, teachers):
     MAX_DOUBLE_PER_DAY = 2
 
     # =====================================================
+    # WEEKLY SUBJECT TRACKER (NEW)
+    # =====================================================
+    subject_weekly_count = defaultdict(int)
+
+    # Count required lessons per subject
+    subject_required_count = defaultdict(int)
+    for block in lesson_blocks:
+        subject_required_count[block.subject] += block.block_size
+
+    # =====================================================
     # DAY LOAD TRACKER
     # =====================================================
     day_load = defaultdict(int)
+
+    # =====================================================
+    # SUBJECT GAP TRACKER
+    # =====================================================
+    subject_last_period = defaultdict(lambda: defaultdict(lambda: -100))
+    MIN_GAP = 1
 
     # =====================================================
     # SHUFFLE SLOTS (ANTI FRONT-LOADING)
@@ -74,12 +90,14 @@ def schedule_lessons(lesson_blocks, lesson_slots, teachers):
     shuffle(lesson_slots_copy)
 
     # =====================================================
-    # SORT BLOCKS (DOUBLE FIRST)
+    # SORT BLOCKS BY DEMAND (NEW)
     # =====================================================
     sorted_blocks = sorted(
         lesson_blocks,
-        key=lambda b: b.block_size,
-        reverse=True
+        key=lambda b: (
+            -b.block_size,                        # doubles first
+            -subject_required_count[b.subject]    # high demand subjects first
+        )
     )
 
     # =====================================================
@@ -95,15 +113,16 @@ def schedule_lessons(lesson_blocks, lesson_slots, teachers):
         scheduled = False
 
         # =================================================
-        # 🔥 NEW: DYNAMIC SLOT SORTING (CRITICAL FIX)
+        #  DYNAMIC SLOT SORTING (CRITICAL FIX)
         # =================================================
         # Re-sort every time based on CURRENT day load
         # This ensures real balancing during scheduling
         # =================================================
         lesson_slots_dynamic = sorted(
             lesson_slots_copy,
-            key=lambda s: day_load[s.day]
+            key=lambda s: (day_load[s.day], s.period)
         )
+
 
         # =================================================
         # SINGLE LESSON
@@ -115,9 +134,19 @@ def schedule_lessons(lesson_blocks, lesson_slots, teachers):
                 if slot.id in occupied_slots:
                     continue
 
-                current_count = subject_daily_count[slot.day][block.subject]
+                # DAILY LIMIT
+                if subject_daily_count[slot.day][block.subject] >= MAX_PER_SUBJECT_PER_DAY:
+                    continue
 
-                if current_count >= MAX_PER_SUBJECT_PER_DAY:
+                # GAP CONTROL
+                last_period = subject_last_period[slot.day][block.subject]
+                if slot.period - last_period < MIN_GAP:
+                    continue
+
+                # =================================================
+                #  WEEKLY LIMIT CHECK (NEW)
+                # =================================================
+                if subject_weekly_count[block.subject] >= subject_required_count[block.subject]:
                     continue
 
                 teacher = find_available_teacher(block, [slot.id], teachers)
@@ -128,7 +157,10 @@ def schedule_lessons(lesson_blocks, lesson_slots, teachers):
 
                     # UPDATE TRACKERS
                     subject_daily_count[slot.day][block.subject] += 1
-                    day_load[slot.day] += 1  # 🔥 USED FOR BALANCING
+                    subject_weekly_count[block.subject] += 1   # 🔥 NEW
+                    day_load[slot.day] += 1
+
+                    subject_last_period[slot.day][block.subject] = slot.period
 
                     block.assign_teacher(teacher)
                     block.assign_slot(slot.id)
@@ -139,7 +171,7 @@ def schedule_lessons(lesson_blocks, lesson_slots, teachers):
                     scheduled = True
                     break
 
-        # =================================================
+       # =================================================
         # DOUBLE LESSON
         # =================================================
         elif block.block_size == 2:
@@ -159,9 +191,25 @@ def schedule_lessons(lesson_blocks, lesson_slots, teachers):
                     if double_lessons_per_day[slot1.day] >= MAX_DOUBLE_PER_DAY:
                         continue
 
-                    current_count = subject_daily_count[slot1.day][block.subject]
+                    if subject_daily_count[slot1.day][block.subject] >= MAX_PER_SUBJECT_PER_DAY:
+                        continue
 
-                    if current_count >= MAX_PER_SUBJECT_PER_DAY:
+                    # GAP CONTROL
+                    last_period = subject_last_period[slot1.day][block.subject]
+                    if slot1.period - last_period < MIN_GAP:
+                        continue
+
+                    # =================================================
+                    # PHASE 1: WEEKLY LIMIT CHECK (NEW)
+                    # =================================================
+                    if subject_weekly_count[block.subject] + 2 > subject_required_count[block.subject]:
+                        continue
+
+                    # =====================================================
+                    # EARLY DOUBLE BIAS
+                    # Avoid late-day double lessons
+                    # =====================================================
+                    if slot1.period > 6:
                         continue
 
                     slot_ids = [slot1.id, slot2.id]
@@ -177,8 +225,11 @@ def schedule_lessons(lesson_blocks, lesson_slots, teachers):
 
                         # UPDATE TRACKERS
                         subject_daily_count[slot1.day][block.subject] += 2
+                        subject_weekly_count[block.subject] += 2  
                         double_lessons_per_day[slot1.day] += 1
-                        day_load[slot1.day] += 2  # 🔥 BALANCING FIX
+                        day_load[slot1.day] += 2
+
+                        subject_last_period[slot1.day][block.subject] = slot2.period
 
                         block.assign_teacher(teacher)
                         block.assign_slot(slot1.id)
@@ -199,9 +250,17 @@ def schedule_lessons(lesson_blocks, lesson_slots, teachers):
     # =====================================================
     for block in unscheduled_blocks:
 
+        # =================================================
+        # SORTED SLOTS IN SECOND PASS
+        # =================================================
+        sorted_slots = sorted(
+            lesson_slots,
+            key=lambda s: (day_load[s.day], s.period)
+        )
+
         if block.block_size == 1:
 
-            for slot in lesson_slots:
+            for slot in sorted_slots:
 
                 if slot.id in occupied_slots:
                     continue
@@ -212,6 +271,8 @@ def schedule_lessons(lesson_blocks, lesson_slots, teachers):
                     timetable[slot.id] = block
                     occupied_slots.add(slot.id)
 
+                    subject_weekly_count[block.subject] += 1
+
                     block.assign_teacher(teacher)
                     block.assign_slot(slot.id)
 
@@ -221,10 +282,10 @@ def schedule_lessons(lesson_blocks, lesson_slots, teachers):
 
         elif block.block_size == 2:
 
-            for i in range(len(lesson_slots) - 1):
+            for i in range(len(sorted_slots) - 1):
 
-                slot1 = lesson_slots[i]
-                slot2 = lesson_slots[i + 1]
+                slot1 = sorted_slots[i]
+                slot2 = sorted_slots[i + 1]
 
                 if (
                     slot1.day == slot2.day and
@@ -244,6 +305,8 @@ def schedule_lessons(lesson_blocks, lesson_slots, teachers):
                         occupied_slots.add(slot1.id)
                         occupied_slots.add(slot2.id)
 
+                        subject_weekly_count[block.subject] += 2
+
                         block.assign_teacher(teacher)
                         block.assign_slot(slot1.id)
                         block.assign_slot(slot2.id)
@@ -252,5 +315,27 @@ def schedule_lessons(lesson_blocks, lesson_slots, teachers):
                         teacher.assign_slot(slot2.id)
                         teacher.assign_lesson(block)
                         break
+
+            # =====================================================
+    # DEBUG: PHASE 1 WEEKLY TRACKING CHECK
+    # =====================================================
+
+    print("\n========== PHASE 1 DEBUG ==========")
+
+    print("\n--- REQUIRED LESSONS PER SUBJECT ---")
+    for subject, count in subject_required_count.items():
+        print(f"{subject}: {count}")
+
+    print("\n--- SCHEDULED LESSONS PER SUBJECT ---")
+    for subject, count in subject_weekly_count.items():
+        print(f"{subject}: {count}")
+
+    print("\n--- DIFFERENCE (SHOULD BE ZERO) ---")
+    for subject in subject_required_count:
+        required = subject_required_count[subject]
+        scheduled = subject_weekly_count.get(subject, 0)
+        print(f"{subject}: {required - scheduled}")
+
+    print("====================================\n")
 
     return timetable
